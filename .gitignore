@@ -3,6 +3,5 @@ __pycache__/
 *.pyc
 .env
 data/raw/
-*.csv
 .DS_Store
 .ipynb_checkpoints/
