@@ -1,5 +1,7 @@
 # AI Capital Markets Decision Agent
 
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://capital-markets-agent-97svqjk3flfg9pkqjctcdk.streamlit.app)
+
 ![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/LangGraph-1.2.2-green?logo=graphql&logoColor=white)
 ![scikit-learn](https://img.shields.io/badge/scikit--learn-1.8.0-orange?logo=scikitlearn&logoColor=white)
@@ -17,6 +19,14 @@ Seven specialized AI agents work together in a pipeline: one downloads market da
 ---
 
 ## Live Demo
+
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://capital-markets-agent-97svqjk3flfg9pkqjctcdk.streamlit.app)
+
+**[https://capital-markets-agent-97svqjk3flfg9pkqjctcdk.streamlit.app](https://capital-markets-agent-97svqjk3flfg9pkqjctcdk.streamlit.app)**
+
+Click the badge above to open the live dashboard — no installation required.
+
+To run locally instead:
 
 ```bash
 streamlit run app/dashboard.py
