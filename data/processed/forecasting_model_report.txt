@@ -1,5 +1,5 @@
 Forecasting Model Report
-Generated: 2026-06-05T16:35:21Z
+Generated: 2026-06-05T17:04:36Z
 ============================================================
 
 Ticker: GLD
