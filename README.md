@@ -1,6 +1,8 @@
 # AI Capital Markets Decision Agent
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://capital-markets-agent-97svqjk3flfg9pkqjctcdk.streamlit.app)
+<a href="https://capital-markets-agent-97svqjk3flfg9pkqjctcdk.streamlit.app">
+  <img src="https://static.streamlit.io/badges/streamlit_badge_black_white.svg" alt="Open in Streamlit"/>
+</a>
 
 ![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python&logoColor=white)
 ![LangGraph](https://img.shields.io/badge/LangGraph-1.2.2-green?logo=graphql&logoColor=white)
@@ -20,7 +22,9 @@ Seven specialized AI agents work together in a pipeline: one downloads market da
 
 ## Live Demo
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://capital-markets-agent-97svqjk3flfg9pkqjctcdk.streamlit.app)
+<a href="https://capital-markets-agent-97svqjk3flfg9pkqjctcdk.streamlit.app">
+  <img src="https://static.streamlit.io/badges/streamlit_badge_black_white.svg" alt="Open in Streamlit"/>
+</a>
 
 **[https://capital-markets-agent-97svqjk3flfg9pkqjctcdk.streamlit.app](https://capital-markets-agent-97svqjk3flfg9pkqjctcdk.streamlit.app)**
 
