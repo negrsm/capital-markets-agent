@@ -22,6 +22,17 @@ from matplotlib.patches import Patch
 # ── make src/ importable regardless of launch directory ──────────────────────
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+# ── resolve OpenAI API key before importing agents (which creates the LLM) ───
+# Priority: st.secrets (Streamlit Cloud) → os.getenv / .env (local dev)
+try:
+    _openai_key = st.secrets["OPENAI_API_KEY"]
+except Exception:
+    from dotenv import load_dotenv
+    load_dotenv()
+    _openai_key = os.getenv("OPENAI_API_KEY", "")
+if _openai_key:
+    os.environ["OPENAI_API_KEY"] = _openai_key
+
 from agents import build_graph, MarketState          # streaming execution
 from data_loader import DEFAULT_TICKERS, download_data, get_last_updated
 from graph import run_pipeline                        # fallback / import as requested

@@ -35,8 +35,23 @@ from data_loader import DEFAULT_TICKERS, load_data
 from forecasting import run_forecasting
 from metrics import compute_metrics
 
-# Load OPENAI_API_KEY (and any other vars) from .env before the LLM is created
+# Load .env for local development (no-op on Streamlit Cloud)
 load_dotenv()
+
+
+def _get_api_key() -> str:
+    """Return the OpenAI API key.
+
+    Priority:
+        1. st.secrets['OPENAI_API_KEY']  — Streamlit Cloud deployment
+        2. OPENAI_API_KEY env var        — local .env or system environment
+    """
+    try:
+        import streamlit as st
+        return st.secrets["OPENAI_API_KEY"]
+    except Exception:
+        return os.getenv("OPENAI_API_KEY", "")
+
 
 # ---------------------------------------------------------------------------
 # Shared LLM client — initialised once at import time
@@ -48,7 +63,7 @@ load_dotenv()
 _llm = ChatOpenAI(
     model="gpt-4o-mini",
     temperature=0.2,
-    api_key=os.getenv("OPENAI_API_KEY"),
+    api_key=_get_api_key(),
 )
 
 # ---------------------------------------------------------------------------
