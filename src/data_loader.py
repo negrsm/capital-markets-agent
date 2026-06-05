@@ -18,6 +18,7 @@ def download_data(
     tickers: list[str] = DEFAULT_TICKERS,
     start: str = DEFAULT_START,
     end: str = DEFAULT_END,
+    refresh: bool = False,
 ) -> dict[str, pd.DataFrame]:
     """Download daily OHLCV data for each ticker and save to data/raw/<TICKER>.csv.
 
@@ -25,16 +26,24 @@ def download_data(
         tickers: List of ticker symbols to download.
         start:   Start date string in YYYY-MM-DD format.
         end:     End date string in YYYY-MM-DD format (defaults to today).
+        refresh: If True, always download fresh data even if the CSV already exists.
+                 If False, skip tickers whose CSV files already exist.
 
     Returns:
         Dictionary mapping each ticker to its OHLCV DataFrame.
     """
     os.makedirs(RAW_DIR, exist_ok=True)
-    print(f"[data_loader] Downloading {len(tickers)} tickers from {start} to {end}...")
 
     results: dict[str, pd.DataFrame] = {}
 
     for ticker in tickers:
+        csv_path = os.path.join(RAW_DIR, f"{ticker}.csv")
+
+        if not refresh and os.path.exists(csv_path):
+            print(f"  -> {ticker}: CSV exists, skipping (use refresh=True to re-download).")
+            results[ticker] = pd.read_csv(csv_path, index_col="Date", parse_dates=True)
+            continue
+
         print(f"  -> Fetching {ticker} ...", end=" ", flush=True)
         df = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
 
@@ -47,32 +56,48 @@ def download_data(
             df.columns = df.columns.get_level_values(0)
 
         df.index.name = "Date"
-        csv_path = os.path.join(RAW_DIR, f"{ticker}.csv")
         df.to_csv(csv_path)
         print(f"saved {len(df)} rows -> {csv_path}")
         results[ticker] = df
 
-    print(f"[data_loader] Download complete. {len(results)}/{len(tickers)} tickers saved.")
+    downloaded = sum(1 for t in tickers if not (not refresh and os.path.exists(os.path.join(RAW_DIR, f"{t}.csv"))))
+    print(f"[data_loader] Download complete. {len(results)}/{len(tickers)} tickers available.")
     return results
 
 
-def load_data(tickers: list[str] = DEFAULT_TICKERS) -> dict[str, pd.DataFrame]:
-    """Load previously downloaded CSVs from data/raw/ into DataFrames.
+def load_data(
+    tickers: list[str] = DEFAULT_TICKERS,
+    refresh: bool = False,
+) -> dict[str, pd.DataFrame]:
+    """Load OHLCV data for each ticker from data/raw/ CSVs.
+
+    Automatically calls download_data() if any ticker CSV is missing or
+    if refresh=True.
 
     Args:
         tickers: List of ticker symbols to load.
+        refresh: If True, re-download all tickers from Yahoo Finance before loading.
+                 If False, only download tickers whose CSV files are missing.
 
     Returns:
         Dictionary mapping each ticker to its OHLCV DataFrame.
-        Tickers whose CSV files are not found are skipped with a warning.
     """
+    missing = [t for t in tickers if not os.path.exists(os.path.join(RAW_DIR, f"{t}.csv"))]
+
+    if refresh or missing:
+        if refresh:
+            print(f"[data_loader] refresh=True — re-downloading all {len(tickers)} tickers...")
+        else:
+            print(f"[data_loader] Missing CSVs for {missing} — downloading now...")
+        download_data(tickers=tickers, refresh=refresh)
+
     print(f"[data_loader] Loading {len(tickers)} tickers from {RAW_DIR} ...")
     results: dict[str, pd.DataFrame] = {}
 
     for ticker in tickers:
         csv_path = os.path.join(RAW_DIR, f"{ticker}.csv")
         if not os.path.exists(csv_path):
-            print(f"  WARNING: {csv_path} not found — run download_data() first.")
+            print(f"  WARNING: {csv_path} not found — skipping.")
             continue
 
         df = pd.read_csv(csv_path, index_col="Date", parse_dates=True)
@@ -81,6 +106,27 @@ def load_data(tickers: list[str] = DEFAULT_TICKERS) -> dict[str, pd.DataFrame]:
 
     print(f"[data_loader] Load complete. {len(results)}/{len(tickers)} tickers available.")
     return results
+
+
+def get_last_updated(tickers: list[str] = DEFAULT_TICKERS) -> dict[str, str]:
+    """Return the most recent date in each ticker's CSV file.
+
+    Args:
+        tickers: List of ticker symbols to check.
+
+    Returns:
+        Dictionary mapping each ticker to its last date string (YYYY-MM-DD),
+        or None if the CSV does not exist.
+    """
+    result: dict[str, str | None] = {}
+    for ticker in tickers:
+        csv_path = os.path.join(RAW_DIR, f"{ticker}.csv")
+        if not os.path.exists(csv_path):
+            result[ticker] = None
+            continue
+        df = pd.read_csv(csv_path, index_col="Date", parse_dates=True)
+        result[ticker] = df.index[-1].date().isoformat() if not df.empty else None
+    return result
 
 
 if __name__ == "__main__":

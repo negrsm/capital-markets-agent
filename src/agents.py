@@ -42,6 +42,9 @@ load_dotenv()
 # Shared LLM client — initialised once at import time
 # ---------------------------------------------------------------------------
 
+# One shared client is used by all LLM-calling agents (sentiment + report).
+# temperature=0.2 keeps responses focused and deterministic; higher values
+# would make the model more creative but less consistent across runs.
 _llm = ChatOpenAI(
     model="gpt-4o-mini",
     temperature=0.2,
@@ -55,6 +58,10 @@ _llm = ChatOpenAI(
 
 class MarketState(TypedDict):
     """Shared state threaded through every agent node in the capital markets graph.
+
+    LangGraph passes this dict into every node function.  Each node returns a
+    *partial* dict — only the keys it writes — and LangGraph merges those updates
+    back into the shared state before passing it to the next node.
 
     Keys:
         tickers:    List of ticker symbols to analyse.
@@ -95,10 +102,21 @@ def market_data_agent(state: MarketState) -> dict:
         Partial state update: ``price_data`` and ``timestamp``.
     """
     print("[market_data_agent] Loading price data ...")
+
+    # Fall back to the default ticker list if none were provided in state
     tickers = state.get("tickers") or DEFAULT_TICKERS
+
+    # load_data() reads CSVs from data/raw/<TICKER>.csv into DataFrames.
+    # Returns a dict: {"SPY": DataFrame, "QQQ": DataFrame, ...}
     price_data = load_data(tickers)
+
+    # Record the wall-clock time the data was loaded so the report can cite it.
+    # timezone.utc ensures the timestamp is unambiguous regardless of server locale.
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
     print(f"  Loaded {len(price_data)} tickers.")
+
+    # Returning only the keys we wrote; LangGraph merges this into the full state
     return {"price_data": price_data, "timestamp": timestamp}
 
 
@@ -115,13 +133,21 @@ def metrics_agent(state: MarketState) -> dict:
     print("[metrics_agent] Computing financial metrics ...")
     price_data = state.get("price_data", {})
 
+    # Guard: if the previous node returned no data, skip cleanly
     if not price_data:
         print("  WARNING: price_data is empty — skipping metrics.")
         return {"metrics": {}}
 
+    # compute_metrics() returns a DataFrame indexed by ticker with columns like
+    # ann_return, ann_volatility, sharpe_ratio, max_drawdown, ma_50, ma_200, etc.
     metrics_df = compute_metrics(price_data)
-    # orient='index' → {ticker: {column: value, ...}}
+
+    # orient='index' converts the DataFrame to:
+    #   {"SPY": {"ann_return": 0.12, "sharpe_ratio": 0.8, ...}, "QQQ": {...}, ...}
+    # This format is easier to look up by ticker in downstream agents than a
+    # column-oriented dict, and it's plain Python so it serialises cleanly.
     metrics_dict = metrics_df.to_dict(orient="index")
+
     print(f"  Computed metrics for {len(metrics_dict)} tickers.")
     return {"metrics": metrics_dict}
 
@@ -143,7 +169,12 @@ def forecasting_agent(state: MarketState) -> dict:
         print("  WARNING: price_data is empty — skipping forecasting.")
         return {"forecasts": {}}
 
+    # run_forecasting() trains a Random Forest for each ticker on its OHLCV data,
+    # evaluates on a held-out time window, and returns the model's estimated
+    # probability that the next 5-day return will be positive.
+    # Example return: {"SPY": 0.62, "QQQ": 0.48, "TLT": 0.31, ...}
     forecasts = run_forecasting(price_data)
+
     print(f"  Forecasts complete for {len(forecasts)} tickers.")
     return {"forecasts": forecasts}
 
@@ -163,15 +194,20 @@ def sentiment_agent(state: MarketState) -> dict:
     metrics = state.get("metrics", {})
     forecasts = state.get("forecasts", {})
 
+    # If metrics are missing there's nothing meaningful to show the LLM —
+    # default everything to Neutral so downstream agents still get a value
     if not metrics:
         print("  WARNING: metrics empty — defaulting all sentiment to Neutral.")
         return {"sentiment": {t: "Neutral" for t in state.get("price_data", {})}}
 
-    # Build a compact per-ticker summary to give the LLM relevant context
+    # Build one compact line per ticker to include in the LLM prompt.
+    # Batching all tickers into a single call is cheaper and faster than
+    # making one API call per ticker (8 calls → 1 call).
     summaries = []
     for ticker, m in sorted(metrics.items()):
         prob = forecasts.get(ticker, float("nan"))
-        prob_str = f"{prob:.1%}" if prob == prob else "n/a"  # nan check
+        # "prob == prob" is False only when prob is NaN (NaN != NaN by IEEE 754)
+        prob_str = f"{prob:.1%}" if prob == prob else "n/a"
         summaries.append(
             f"  {ticker}: ann_return={m.get('ann_return', 0):.1%}, "
             f"volatility={m.get('ann_volatility', 0):.1%}, "
@@ -180,6 +216,8 @@ def sentiment_agent(state: MarketState) -> dict:
             f"forecast_prob={prob_str}"
         )
 
+    # The prompt instructs the model to return pure JSON so we can parse it
+    # reliably without any natural-language post-processing
     prompt = (
         "You are a senior equity analyst. Using only the quantitative data below, "
         "classify the near-term market sentiment for each ticker as exactly one of: "
@@ -190,23 +228,33 @@ def sentiment_agent(state: MarketState) -> dict:
     )
 
     try:
+        # HumanMessage wraps the text in the chat format the API expects
         response = _llm.invoke([HumanMessage(content=prompt)])
         raw = response.content.strip()
-        # Strip markdown code fences the model sometimes wraps JSON in
+
+        # Models sometimes wrap their JSON in ```json ... ``` fences even when
+        # told not to — strip those before parsing
         if raw.startswith("```"):
-            raw = raw.split("```")[1]
+            raw = raw.split("```")[1]       # take the content between the fences
             if raw.startswith("json"):
-                raw = raw[4:]
+                raw = raw[4:]               # remove the language hint after ```
+
         parsed = json.loads(raw.strip())
+
+        # Only accept the three valid labels; anything else becomes Neutral
         valid_labels = {"Bullish", "Neutral", "Bearish"}
         sentiment = {
             t: (v if v in valid_labels else "Neutral")
             for t, v in parsed.items()
         }
-        # Ensure every ticker in metrics gets a label
+
+        # The LLM might omit a ticker — setdefault fills in Neutral for any gap
         for ticker in metrics:
             sentiment.setdefault(ticker, "Neutral")
+
     except Exception as exc:
+        # If JSON parsing or the API call fails, fall back gracefully so the
+        # rest of the pipeline can still produce a result
         print(f"  WARNING: LLM sentiment parsing failed ({exc}) — defaulting to Neutral.")
         sentiment = {t: "Neutral" for t in metrics}
 
@@ -245,23 +293,38 @@ def decision_agent(state: MarketState) -> dict:
     for ticker, m in sorted(metrics.items()):
         score = 0
 
+        # --- factor 1: strong positive trend ---
         if m.get("ann_return", 0) > 0.10:
             score += 1
+
+        # --- factor 2: manageable risk (low vol = more predictable returns) ---
         if m.get("ann_volatility", 1.0) < 0.20:
             score += 1
+
+        # --- factor 3: good risk-adjusted return ---
         if m.get("sharpe_ratio", 0) > 0.5:
             score += 1
-        # Compare most recent close price to the 200-day simple moving average
+
+        # --- factor 4: price momentum signal (above long-term trend = bullish) ---
+        # Default ma_200 to infinity so the check fails safely if the MA is missing
         if m.get("last_close", 0) > m.get("ma_200", float("inf")):
             score += 1
+
+        # --- factor 5: ML model says next week looks positive ---
         if forecasts.get(ticker, 0) > 0.55:
             score += 1
+
+        # --- factor 6: LLM analyst agrees the outlook is positive ---
         if sentiment.get(ticker) == "Bullish":
             score += 1
-        # max_drawdown is a negative decimal; > -0.25 means drawdown < 25%
+
+        # --- factor 7: limited historical drawdown risk ---
+        # max_drawdown is stored as a negative decimal (e.g. -0.32 = down 32%).
+        # > -0.25 means the worst drop was less than 25%, which is the passing bar.
         if m.get("max_drawdown", -1.0) > -0.25:
             score += 1
 
+        # Map total score to a portfolio action label
         if score >= 6:
             action = "Overweight"
         elif score >= 4:
@@ -297,7 +360,11 @@ def risk_agent(state: MarketState) -> dict:
     risk_flags = {}
 
     # --- Concentration risk ---
+    # Collect every ticker the decision agent rated as Overweight
     overweight = sorted(t for t, d in decisions.items() if d.get("action") == "Overweight")
+
+    # More than 3 Overweight positions creates concentrated directional exposure —
+    # if the market reverses, all positions move against the portfolio together
     if len(overweight) > 3:
         risk_flags["concentration_risk"] = (
             f"Concentration risk: {len(overweight)} tickers rated Overweight "
@@ -306,6 +373,7 @@ def risk_agent(state: MarketState) -> dict:
         print(f"  [!] {risk_flags['concentration_risk']}")
 
     # --- High volatility ---
+    # A 30% annualised vol threshold is a common rule-of-thumb for "elevated risk"
     high_vol = sorted(t for t, m in metrics.items() if m.get("ann_volatility", 0) > 0.30)
     if high_vol:
         risk_flags["high_volatility"] = (
@@ -332,23 +400,29 @@ def report_agent(state: MarketState) -> dict:
     """
     print("[report_agent] Generating executive summary via LLM ...")
 
-    decisions = state.get("decisions", {})
+    decisions  = state.get("decisions", {})
     risk_flags = state.get("risk_flags", {})
-    metrics = state.get("metrics", {})
-    forecasts = state.get("forecasts", {})
-    sentiment = state.get("sentiment", {})
-    timestamp = state.get("timestamp", "")
+    metrics    = state.get("metrics", {})
+    forecasts  = state.get("forecasts", {})
+    sentiment  = state.get("sentiment", {})
+    timestamp  = state.get("timestamp", "")
 
-    # Compact representations for the prompt
+    # Flatten each section of the state into readable plain-text lines so the
+    # LLM receives structured context rather than raw nested dictionaries
+
     action_lines = "\n".join(
         f"  {t}: {d['action']} (score {d['score']}/7, sentiment {sentiment.get(t, 'N/A')})"
         for t, d in sorted(decisions.items())
     )
+
+    # If there are no risk flags, tell the LLM explicitly — otherwise it might
+    # hallucinate risks that don't exist
     risk_lines = (
         "\n".join(f"  - {msg}" for msg in risk_flags.values())
         if risk_flags
         else "  None identified."
     )
+
     metric_lines = "\n".join(
         f"  {t}: return={m.get('ann_return', 0):.1%}, "
         f"vol={m.get('ann_volatility', 0):.1%}, "
@@ -358,6 +432,8 @@ def report_agent(state: MarketState) -> dict:
         for t, m in sorted(metrics.items())
     )
 
+    # The prompt gives the LLM a clear role, a word-count target, and explicit
+    # topics to cover so the output is consistently structured
     prompt = (
         "You are a senior portfolio manager preparing an investment committee briefing. "
         "Write a concise executive summary of approximately 200 words based on the "
@@ -374,7 +450,8 @@ def report_agent(state: MarketState) -> dict:
         response = _llm.invoke([HumanMessage(content=prompt)])
         report = response.content.strip()
     except Exception as exc:
-        # Structured fallback so the pipeline never silently returns an empty report
+        # The fallback includes the raw structured data so downstream consumers
+        # (e.g., the dashboard) still receive something useful even without the LLM
         report = (
             f"[LLM unavailable — {exc}]\n\n"
             f"Portfolio Actions:\n{action_lines}\n\n"
@@ -403,8 +480,12 @@ def build_graph():
         A compiled LangGraph ``CompiledGraph`` ready to ``.invoke()`` with an
         initial MarketState dictionary.
     """
+    # StateGraph takes the TypedDict class as its schema so LangGraph knows
+    # which keys exist in the shared state and can validate updates
     builder = StateGraph(MarketState)
 
+    # Register each agent function as a named node in the graph.
+    # The string name is used when wiring edges below.
     builder.add_node("market_data_agent", market_data_agent)
     builder.add_node("metrics_agent", metrics_agent)
     builder.add_node("forecasting_agent", forecasting_agent)
@@ -413,15 +494,24 @@ def build_graph():
     builder.add_node("risk_agent", risk_agent)
     builder.add_node("report_agent", report_agent)
 
+    # set_entry_point marks where execution begins when .invoke() is called
     builder.set_entry_point("market_data_agent")
+
+    # add_edge defines the execution order: after node A finishes, run node B.
+    # This creates a strict linear pipeline — no branching or parallelism here.
     builder.add_edge("market_data_agent", "metrics_agent")
     builder.add_edge("metrics_agent", "forecasting_agent")
     builder.add_edge("forecasting_agent", "sentiment_agent")
     builder.add_edge("sentiment_agent", "decision_agent")
     builder.add_edge("decision_agent", "risk_agent")
     builder.add_edge("risk_agent", "report_agent")
+
+    # END is LangGraph's sentinel value signalling that the graph is finished.
+    # After report_agent runs, the compiled graph returns the final state.
     builder.add_edge("report_agent", END)
 
+    # compile() validates the graph structure (no orphan nodes, reachable END,
+    # etc.) and returns an executable object with .invoke() / .stream() methods
     return builder.compile()
 
 
@@ -434,6 +524,7 @@ if __name__ == "__main__":
 
     initial_state: MarketState = {
         "tickers": DEFAULT_TICKERS,
+        # All other keys start empty; each agent fills in its own section
         "price_data": {},
         "metrics": {},
         "forecasts": {},

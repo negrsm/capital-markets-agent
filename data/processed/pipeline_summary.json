@@ -1,0 +1,69 @@
+{
+  "timestamp": "2026-06-05T16:34:36Z",
+  "tickers": [
+    "SPY",
+    "QQQ",
+    "XLF",
+    "XLE",
+    "XLV",
+    "TLT",
+    "GLD",
+    "UUP"
+  ],
+  "decisions": {
+    "GLD": {
+      "score": 6,
+      "action": "Overweight"
+    },
+    "QQQ": {
+      "score": 4,
+      "action": "Neutral"
+    },
+    "SPY": {
+      "score": 6,
+      "action": "Overweight"
+    },
+    "TLT": {
+      "score": 2,
+      "action": "Underweight"
+    },
+    "UUP": {
+      "score": 4,
+      "action": "Neutral"
+    },
+    "XLE": {
+      "score": 4,
+      "action": "Neutral"
+    },
+    "XLF": {
+      "score": 1,
+      "action": "Avoid"
+    },
+    "XLV": {
+      "score": 4,
+      "action": "Neutral"
+    }
+  },
+  "sentiment": {
+    "GLD": "Bullish",
+    "QQQ": "Bullish",
+    "SPY": "Bullish",
+    "TLT": "Bearish",
+    "UUP": "Neutral",
+    "XLE": "Bullish",
+    "XLF": "Neutral",
+    "XLV": "Bearish"
+  },
+  "forecasts": {
+    "SPY": 0.744392,
+    "QQQ": 0.732343,
+    "XLF": 0.539868,
+    "XLE": 0.485495,
+    "XLV": 0.610249,
+    "TLT": 0.592338,
+    "GLD": 0.470015,
+    "UUP": 0.677495
+  },
+  "risk_flags": {},
+  "report": "**Executive Summary: Capital Markets Briefing (June 5, 2026)**\n\nThe current market stance is cautiously optimistic, with a bullish sentiment prevailing across key indices. We recommend an overweight position in GLD and SPY, both scoring 6/7, reflecting strong returns of 22.5% and 12.5%, respectively, with favorable forecasts of 47.0% and 74.4%. QQQ remains neutral, scoring 4/7, with a return of 15.6% but higher volatility. \n\nIn contrast, TLT is underweight due to a bearish sentiment and a negative return of -7.9%, indicating significant risks in fixed income. XLE is neutral with a bullish sentiment, showing a robust return of 21.9%. XLF is to be avoided, scoring only 1/7, while XLV is neutral but carries a bearish outlook.\n\nNo immediate risks have been identified, but we will continue to monitor market volatility and economic indicators closely. The near-term outlook remains positive, driven by strong performance in gold and equities, although caution is warranted in fixed income and financial sectors. Overall, we recommend maintaining a diversified approach while capitalizing on the strengths of GLD and SPY."
+}
