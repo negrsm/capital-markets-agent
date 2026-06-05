@@ -24,7 +24,28 @@ streamlit run app/dashboard.py
 
 Click **Run Full Analysis** in the sidebar. The dashboard shows recommendations, charts, and the AI-written report.
 
-![Dashboard](docs/dashboard_screenshot.png)
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/dashboard_overview.jpg" alt="Overview Tab" width="100%"><br>
+      <sub>Overview Tab: Portfolio recommendations with color-coded signals, KPI cards showing 8 tickers analyzed, 2 overweight, 1 avoid</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/dashboard_forecast.jpg" alt="Forecast Chart" width="100%"><br>
+      <sub>Charts Tab: ML forecast probabilities per ticker with 55% buy threshold line — green bars are bullish signals</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/dashboard_returns.jpg" alt="Cumulative Returns" width="100%"><br>
+      <sub>Charts Tab: Cumulative returns from 2022-2026 — GLD and XLE led performance while TLT declined due to rate hikes</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/dashboard_correlation.jpg" alt="Correlation Heatmap" width="100%"><br>
+      <sub>Charts Tab: Return correlation matrix — SPY and QQQ highly correlated (0.96), GLD and UUP uncorrelated providing diversification</sub>
+    </td>
+  </tr>
+</table>
 
 ---
 
